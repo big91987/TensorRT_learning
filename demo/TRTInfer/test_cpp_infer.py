@@ -4,7 +4,7 @@ from functools import reduce
 import time
 
 
-sys.path.insert(0, '/home/TensorRT/demo/TRTInfer/build/')
+sys.path.insert(0, './build/')
 import trt_infer_c
 
 

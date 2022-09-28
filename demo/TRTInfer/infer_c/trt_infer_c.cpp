@@ -177,9 +177,9 @@ struct TrtInferenceRunner {
             auto o_elem_count = trt.mOutputElemSizeList[i];
             if (o_dtype == DataType::kFLOAT) {
                 auto ret = py::array_t<float>(trt.mOutputShapeList[i], (float*) trt.mOutputHostBufferList[i]);
-                rets.append(ret);
-            else if (o_dtype == DataType::KHALF) {
-                auto ret = py::array_t<float16>(trt.mOutputShapeList[i], (float*) trt.mOutputHostBufferList[i]);
+                rets.append(ret); 
+            } else if (o_dtype == DataType::kHALF) {
+                auto ret = py::array_t<float16>(trt.mOutputShapeList[i], (float16*) trt.mOutputHostBufferList[i]);
                 rets.append(ret);
             } else {
                 auto ret = py::array_t<int>(trt.mOutputShapeList[i], (int*) trt.mOutputHostBufferList[i]);
