@@ -84,7 +84,7 @@ private:
     EngineType const* engine;
     ContextType const* context;
     InputsMap const& inputs;
-    BindingsVector& bindings;
+    BindingsVector& bindings; //给每个 stream存了一份bindings
     int32_t batch;
     int32_t endBindingIndex;
 
@@ -95,6 +95,7 @@ private:
         auto const isInput = engine->bindingIsInput(bindingIndex);
         auto const dataType = engine->getBindingDataType(bindingIndex);
         auto const *bindingInOutStr = isInput ? "input" : "output";
+        // 遍历 iEnv里的每个 stream对应的bings中对应[bindingIndex]的那个binding
         for (auto& binding : bindings)
         {
             auto const input = inputs.find(name);
@@ -164,7 +165,8 @@ Dims FillBindingClosure<nvinfer1::safe::ICudaEngine, nvinfer1::safe::IExecutionC
 }
 
 bool setUpInference(InferenceEnvironment& iEnv, InferenceOptions const& inference)
-{
+{   
+    // acquire device 并获取属性
     int32_t device{};
     cudaCheck(cudaGetDevice(&device));
 
@@ -174,6 +176,7 @@ bool setUpInference(InferenceEnvironment& iEnv, InferenceOptions const& inferenc
     // and when it is explicitly requested on the commandline.
     bool useManagedMemory{(inference.skipTransfers && properties.integrated) || inference.useManaged};
     using FillSafeBindings = FillBindingClosure<nvinfer1::safe::ICudaEngine, nvinfer1::safe::IExecutionContext>;
+    // 安全模式
     if (iEnv.safe)
     {
         ASSERT(sample::hasSafeRuntime());
@@ -526,7 +529,7 @@ enum class StreamType : int32_t
 
 enum class EventType : int32_t
 {
-    kINPUT_S = 0,
+    kINPUT_S = 0, 
     kINPUT_E = 1,
     kCOMPUTE_S = 2,
     kCOMPUTE_E = 3,
@@ -535,8 +538,10 @@ enum class EventType : int32_t
     kNUM = 6
 };
 
+// 初始化3个流
 using MultiStream = std::array<TrtCudaStream, static_cast<int32_t>(StreamType::kNUM)>;
 
+// 初始化6个事件
 using MultiEvent = std::array<std::unique_ptr<TrtCudaEvent>, static_cast<int32_t>(EventType::kNUM)>;
 
 using EnqueueTimes = std::array<TimePoint, 2>;
@@ -550,10 +555,11 @@ class Iteration
 {
 
 public:
+    // 每个id对应一个MultipleThread
     Iteration(int32_t id, InferenceOptions const& inference, ContextType& context, Bindings& bindings)
         : mBindings(bindings)
         , mStreamId(id)
-        , mDepth(1 + inference.overlap)
+        , mDepth(1 + inference.overlap) // overlap = !exposeDMA 串行化进出设备的 DMA 传输。 （默认 = 禁用）
         , mActive(mDepth)
         , mEvents(mDepth)
         , mEnqueueTimes(mDepth)
@@ -566,9 +572,12 @@ public:
                 mEvents[d][e].reset(new TrtCudaEvent(!inference.spin));
             }
         }
+        // 根据 inference选项  context 和 bindings 设置mEqueue func
         createEnqueueFunction(inference, context, bindings);
     }
 
+
+    // 发起推理任务， 返回是否执行成功
     bool query(bool skipTransfers)
     {
         if (mActive[mNext])
@@ -576,16 +585,22 @@ public:
             return true;
         }
 
+        // 如果不禁用传输，则进行 D2H
         if (!skipTransfers)
-        {
+        {   
+            // 给 input 流插桩 start
             record(EventType::kINPUT_S, StreamType::kINPUT);
+            // H2D 不sync
             setInputData(false);
+            // 给 inputs流插桩 end
             record(EventType::kINPUT_E, StreamType::kINPUT);
+            // compute 流等待 传输流完成
             wait(EventType::kINPUT_E, StreamType::kCOMPUTE); // Wait for input DMA before compute
         }
 
         record(EventType::kCOMPUTE_S, StreamType::kCOMPUTE);
         recordEnqueueTime();
+        // RUN (mEnqueue) 
         if (!mEnqueue(getStream(StreamType::kCOMPUTE)))
         {
             return false;
@@ -593,6 +608,7 @@ public:
         recordEnqueueTime();
         record(EventType::kCOMPUTE_E, StreamType::kCOMPUTE);
 
+        // 如果不禁用传输，则进行 H2D
         if (!skipTransfers)
         {
             wait(EventType::kCOMPUTE_E, StreamType::kOUTPUT); // Wait for compute before output DMA
@@ -601,11 +617,13 @@ public:
             record(EventType::kOUTPUT_E, StreamType::kOUTPUT);
         }
 
+        
         mActive[mNext] = true;
-        moveNext();
+        moveNext(); // 这没看懂
         return true;
     }
 
+    // 等待推理任务结束，记录结果到trace，返回 从 gpu启动到计算开始的时间
     float sync(
         TimePoint const& cpuStart, TrtCudaEvent const& gpuStart, std::vector<InferenceTrace>& trace, bool skipTransfers)
     {
@@ -641,6 +659,7 @@ public:
         getStream(StreamType::kINPUT).wait(gpuStart);
     }
 
+    // H2D ， 如果 sync则等待传输完毕
     void setInputData(bool sync)
     {
         mBindings.transferInputToDevice(getStream(StreamType::kINPUT));
@@ -651,6 +670,7 @@ public:
         }
     }
 
+    // D2H，如果sync true则等待传输完成
     void fetchOutputData(bool sync)
     {
         mBindings.transferOutputToHost(getStream(StreamType::kOUTPUT));
@@ -663,7 +683,18 @@ public:
 
 private:
     void moveNext()
-    {
+    {   
+        // d = 1
+        // 0 -> 0
+        //
+         
+        // d = 2
+        // 0 --> 1
+        // 1 --> 0
+
+        // d = 3
+        // 0 --> 2
+        // 2 --> 0
         mNext = mDepth - 1 - mNext;
     }
 
@@ -677,6 +708,7 @@ private:
         return *mEvents[mNext][static_cast<int32_t>(t)];
     }
 
+    // 插桩
     void record(EventType e, StreamType s)
     {
         getEvent(e).record(getStream(s));
@@ -685,7 +717,7 @@ private:
     void recordEnqueueTime()
     {
         mEnqueueTimes[mNext][enqueueStart] = getCurrentTime();
-        enqueueStart = 1 - enqueueStart;
+        enqueueStart = 1 - enqueueStart; //自旋
     }
 
     TimePoint getEnqueueTime(bool start)
@@ -698,6 +730,7 @@ private:
         getStream(s).wait(getEvent(e));
     }
 
+    // 没看明白为啥 cpuStart 和 gpuStart要分开
     InferenceTrace getTrace(TimePoint const& cpuStart, TrtCudaEvent const& gpuStart, bool skipTransfers)
     {
         float is
@@ -758,9 +791,11 @@ private:
         }
     }
 
+    // safety 方式 
     void createEnqueueFunction(InferenceOptions const& inference, nvinfer1::safe::IExecutionContext& context, Bindings&)
     {
         mEnqueue = EnqueueFunction(EnqueueSafe(context, mBindings.getDeviceBuffers()));
+        // 如果使用 cudaGraph则初始化
         if (inference.graph)
         {
             TrtCudaStream& stream = getStream(StreamType::kCOMPUTE);
@@ -784,14 +819,16 @@ private:
     int32_t mDepth{2}; // default to double buffer to hide DMA transfers
 
     std::vector<bool> mActive;
-    MultiStream mStream;
-    std::vector<MultiEvent> mEvents;
+    MultiStream mStream; //初始化3个流 H2D run D2H 两个 depth共用 Stream
+    std::vector<MultiEvent> mEvents;  //初始化6个event 对应上面3个开始及结束 两个depth 都有独立的六个 event
 
     int32_t enqueueStart{0};
     std::vector<EnqueueTimes> mEnqueueTimes;
     ContextType* mContext{nullptr};
 };
 
+
+// 成功返回 true
 template <class ContextType>
 bool inferenceLoop(std::vector<std::unique_ptr<Iteration<ContextType>>>& iStreams, TimePoint const& cpuStart,
     TrtCudaEvent const& gpuStart, int iterations, float maxDurationMs, float warmupMs,
@@ -800,19 +837,25 @@ bool inferenceLoop(std::vector<std::unique_ptr<Iteration<ContextType>>>& iStream
     float durationMs = 0;
     int32_t skip = 0;
 
+
+    // 没到warmup 就一直循环，因为 skip 会一直 ++
     for (int32_t i = 0; i < iterations + skip || durationMs < maxDurationMs; ++i)
-    {
+    {   
         for (auto& s : iStreams)
-        {
+        {   
             if (!s->query(skipTransfers))
             {
                 return false;
             }
         }
+
+        // sync 并记录 持续时间
         for (auto& s : iStreams)
         {
             durationMs = std::max(durationMs, s->sync(cpuStart, gpuStart, trace, skipTransfers));
         }
+
+
         if (durationMs < warmupMs) // Warming up
         {
             if (durationMs) // Skip complete iterations
@@ -821,11 +864,15 @@ bool inferenceLoop(std::vector<std::unique_ptr<Iteration<ContextType>>>& iStream
             }
             continue;
         }
+
+        // 设置休眠
         if (idleMs != 0.F)
         {
             std::this_thread::sleep_for(std::chrono::duration<float, std::milli>(idleMs));
         }
     }
+
+
     for (auto& s : iStreams)
     {
         s->syncAll(cpuStart, gpuStart, trace, skipTransfers);
@@ -833,6 +880,8 @@ bool inferenceLoop(std::vector<std::unique_ptr<Iteration<ContextType>>>& iStream
     return true;
 }
 
+
+// 绑定一个线程
 template <class ContextType>
 void inferenceExecution(InferenceOptions const& inference, InferenceEnvironment& iEnv, SyncStruct& sync,
     int32_t const threadIdx, int32_t const streamsPerThread, int32_t device, std::vector<InferenceTrace>& trace)
@@ -844,13 +893,18 @@ void inferenceExecution(InferenceOptions const& inference, InferenceEnvironment&
 
     std::vector<std::unique_ptr<Iteration<ContextType>>> iStreams;
 
+    // iEnv 需要先用 SetUpEnv，填充bingding
+
+    // 每个线程 初始化 [streamsPerThread] 个 streams，每个 stream 具有全局streamId
+    // 每个streamId 绑独立的 bindings以及 context
     for (int32_t s = 0; s < streamsPerThread; ++s)
     {
         int32_t const streamId{threadIdx * streamsPerThread + s};
         auto* iteration = new Iteration<ContextType>(
             streamId, inference, *iEnv.template getContext<ContextType>(streamId), *iEnv.bindings[streamId]);
         if (inference.skipTransfers)
-        {
+        {   
+            // 如果选项里skip传输，则提前传输完
             iteration->setInputData(true);
         }
         iStreams.emplace_back(iteration);
@@ -876,6 +930,8 @@ void inferenceExecution(InferenceOptions const& inference, InferenceEnvironment&
         }
     }
 
+    // 不同线程往trace写结果时候需要加锁，每个线程自己的loop存到localTrace中
+    // 往 vector append vector用 insert
     sync.mutex.lock();
     trace.insert(trace.end(), localTrace.begin(), localTrace.end());
     sync.mutex.unlock();
@@ -908,6 +964,7 @@ bool runInference(
     SyncStruct sync;
     sync.sleep = inference.sleep;
     sync.mainStream.sleep(&sync.sleep);
+    // 这俩是一个时间点，但是因为cuda记录要在 加时间戳
     sync.cpuStart = getCurrentTime();
     sync.gpuStart.record(sync.mainStream);
 
@@ -956,6 +1013,7 @@ size_t reportGpuMemory()
 }
 } // namespace
 
+// load模型，存到iEnv中
 //! Returns true if deserialization is slower than expected or fails.
 bool timeDeserialize(InferenceEnvironment& iEnv)
 {
