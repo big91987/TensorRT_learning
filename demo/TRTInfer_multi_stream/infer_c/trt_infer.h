@@ -19,7 +19,6 @@
 #define INFER_C_TRT_INFER_H
 
 #include "common.h"
-// #include "buffers.h"
 #include "logging.h"
 #include <NvInfer.h>
 #include <NvInferPlugin.h>
@@ -33,7 +32,6 @@
 #include <thread>
 #include "sampleDevice.h"
 #include "sampleUtils.h"
-// #include "sampleReporting.h"
 #include <array>
 #include <cuda_profiler_api.h>
 #include <functional>
@@ -111,10 +109,6 @@ using MultiStream = std::array<TrtCudaStream, static_cast<int32_t>(StreamType::k
 using MultiEvent = std::array<std::unique_ptr<TrtCudaEvent>, static_cast<int32_t>(EventType::kNUM)>;
 using EnqueueTimes = std::array<TimePoint, 2>;
 
-// // 获取容量
-// inline int64_t volume(const nvinfer1::Dims& d) {
-//     return std::accumulate(d.d, d.d + d.nbDims, 1, std::multiplies<int64_t>());
-// }
 
 // 根据type获取占用空间
 inline uint32_t elementSize(nvinfer1::DataType t) {
@@ -128,104 +122,6 @@ inline uint32_t elementSize(nvinfer1::DataType t) {
     return 0;
 }
 
-// template <class EngineType, class ContextType>
-// class FillBindingClosure
-// {
-// private:
-//     using InputsMap = std::unordered_map<std::string, std::string>;
-//     using BindingsVector = std::vector<std::unique_ptr<Bindings>>;
-
-//     EngineType const* engine;
-//     ContextType const* context;
-//     // InputsMap const& inputs;
-//     BindingsVector& bindings; //给每个 stream存了一份bindings
-//     // int32_t batch;
-//     // int32_t endBindingIndex;
-
-//     void fillOneBinding(int32_t bindingIndex, int64_t vol)
-//     {
-//         auto const dims = getDims(bindingIndex);
-//         auto const name = engine->getBindingName(bindingIndex);
-//         auto const isInput = engine->bindingIsInput(bindingIndex);
-//         auto const dataType = engine->getBindingDataType(bindingIndex);
-//         auto const *bindingInOutStr = isInput ? "input" : "output";
-//         // 遍历 iEnv里的每个 stream对应的bings中对应[bindingIndex]的那个binding
-//         for (auto& binding : bindings)
-//         {
-//             // auto const input = inputs.find(name);
-//             // if (isInput && input != inputs.end())
-//             // {
-//             //     sample::gLogInfo << "Using values loaded from " << input->second << " for input " << name << std::endl;
-//             //     binding->addBinding(bindingIndex, name, isInput, vol, dataType, input->second);
-//             // }
-//             // else
-//             // {
-//             sample::gLogInfo << "Using random values for " << bindingInOutStr << " " << name << std::endl;
-//             binding->addBinding(bindingIndex, name, isInput, vol, dataType);
-//             // }
-//             sample::gLogInfo << "Created " << bindingInOutStr <<" binding for " << name << " with dimensions " << dims << std::endl;
-//         }
-//     }
-
-//     bool fillAllBindings(int32_t batch, int32_t endBindingIndex)
-//     {
-//         // if (!validateTensorNames(inputs, engine, endBindingIndex))
-//         // {
-//         //     sample::gLogError << "Invalid tensor names found in --loadInputs flag." << std::endl;
-//         //     return false;
-//         // }
-
-//         for (int32_t b = 0; b < endBindingIndex; b++)
-//         {
-//             auto const dims = getDims(b);
-//             auto const comps = engine->getBindingComponentsPerElement(b);
-//             auto const strides = context->getStrides(b);
-//             int32_t const vectorDimIndex = engine->getBindingVectorizedDim(b);
-//             auto const vol = volume(dims, strides, vectorDimIndex, comps, batch);
-//             fillOneBinding(b, vol);
-//         }
-//         return true;
-//     }
-
-//     Dims getDims(int32_t bindingIndex);
-
-// public:
-//     FillBindingClosure(
-//         EngineType const* _engine, ContextType const* _context, BindingsVector& _bindings)
-//         : engine(_engine)
-//         , context(_context)
-//         // , inputs(_inputs)
-//         , bindings(_bindings)
-//         // , batch(_batch)
-//         // , endBindingIndex(_engine->get)
-//     {
-//         int32_t const nbOptProfiles = engine->getNbOptimizationProfiles();
-//         int32_t const nbBindings = engine->getNbBindings();
-//         int32_t const bindingsInProfile = nbOptProfiles > 0 ? nbBindings / nbOptProfiles : 0;
-//         // endBindingIndex = bindingsInProfile ? bindingsInProfile : engine->getNbBindings();
-//     }
-
-//     // bool operator()()
-//     // {
-//     //     return fillAllBindings(batch, endBindingIndex);
-//     // }
-
-//     bool fill(int32_t b, int32_t e) {
-//         return fillAllBindings(b, e);
-//     }
-// };
-
-// template <>
-// Dims FillBindingClosure<nvinfer1::ICudaEngine, nvinfer1::IExecutionContext>::getDims(int32_t bindingIndex)
-// {
-//     return context->getBindingDimensions(bindingIndex);
-// }
-
-// template <>
-// Dims FillBindingClosure<nvinfer1::safe::ICudaEngine, nvinfer1::safe::IExecutionContext>::getDims(int32_t bindingIndex)
-// {
-//     return engine->getBindingDimensions(bindingIndex);
-// }
 
 // 一个binging，及buffer
 struct Binding
@@ -235,22 +131,18 @@ struct Binding
     int64_t volume{0};
     nvinfer1::DataType dataType{nvinfer1::DataType::kFLOAT};
 
-    //void fill(std::string const& fileName);
     // 从文件填充
     void fill(std::string const& fileName)
     {
         loadFromFile(fileName, static_cast<char*>(buffer->getHostBuffer()), buffer->getSize());
     }
 
+    // 从内存拷贝到锁页内存
     void fill(void* data)
     {
-        // loadFromFile(fileName, static_cast<char*>(buffer->getHostBuffer()), buffer->getSize());
-
-        // buffer->getHostBuffer() = data;
-        memcpy(buffer->getHostBuffer(), data, buffer->getSize());
+        memcpy(static_cast<char*>(buffer->getHostBuffer()), data, buffer->getSize());
     }
 
-    // void fill();
     // 随机填充
     void fill()
     {
@@ -284,8 +176,6 @@ struct Binding
         }
     }
 
-    // void dump(std::ostream& os, Dims dims, Dims strides, int32_t vectorDim, int32_t spv,
-    //     std::string const separator = " ") const;
 
     void dump(std::ostream& os, Dims dims, Dims strides, int32_t vectorDim, int32_t spv,
         std::string const separator /*= " "*/) const
@@ -321,7 +211,7 @@ struct Binding
     }
 };
 
-// 
+
 class Bindings
 {
 public:
@@ -414,6 +304,21 @@ public:
         mDevicePointers[b] = mBindings[b].buffer->getDeviceBuffer();
     }
 
+    void* getHostBuffer(int bindingIndex) {
+        return mBindings[bindingIndex].buffer->getHostBuffer();
+    }
+
+    void* getHostBuffer(std::string const& name) {
+        return mBindings[mNames[name]].buffer->getHostBuffer();
+    }
+
+    void* getDeviceBuffer(int bindingIndex) {
+        return mBindings[bindingIndex].buffer->getDeviceBuffer();
+    }
+
+    void* getDeviceBuffer(std::string const& name) {
+        return mBindings[mNames[name]].buffer->getDeviceBuffer();
+    }
 
     void** getDeviceBuffers()
     {
@@ -441,64 +346,6 @@ public:
             }
         }
     }
-
-    // void dumpBindingDimensions(int binding, nvinfer1::IExecutionContext const& context, std::ostream& os) const
-    // {
-    //     auto const dims = context.getBindingDimensions(binding);
-    //     // Do not add a newline terminator, because the caller may be outputting a JSON string.
-    //     os << dims;
-    // }
-
-    // void dumpBindingValues(nvinfer1::IExecutionContext const& context, int binding, std::ostream& os,
-    //     std::string const& separator /*= " "*/, int32_t batch /*= 1*/) const
-    // {
-    //     Dims dims = context.getBindingDimensions(binding);
-    //     Dims strides = context.getStrides(binding);
-    //     int32_t vectorDim = context.getEngine().getBindingVectorizedDim(binding);
-    //     int32_t const spv = context.getEngine().getBindingComponentsPerElement(binding);
-
-    //     if (context.getEngine().hasImplicitBatchDimension())
-    //     {
-    //         auto insertN = [](Dims& d, int32_t bs) {
-    //             int32_t const nbDims = d.nbDims;
-    //             ASSERT(nbDims < Dims::MAX_DIMS);
-    //             std::copy_backward(&d.d[0], &d.d[nbDims], &d.d[nbDims + 1]);
-    //             d.d[0] = bs;
-    //             d.nbDims = nbDims + 1;
-    //         };
-    //         int32_t batchStride = 0;
-    //         for (int32_t i = 0; i < strides.nbDims; ++i)
-    //         {
-    //             if (strides.d[i] * dims.d[i] > batchStride)
-    //             {
-    //                 batchStride = strides.d[i] * dims.d[i];
-    //             }
-    //         }
-    //         insertN(dims, batch);
-    //         insertN(strides, batchStride);
-    //         vectorDim = (vectorDim == -1) ? -1 : vectorDim + 1;
-    //     }
-
-    //     mBindings[binding].dump(os, dims, strides, vectorDim, spv, separator);
-    // }
-
-    // void dumpBindings(
-    //     nvinfer1::IExecutionContext const& context, std::function<bool(Binding const&)> predicate, std::ostream& os) const
-    // {
-    //     for (auto const& n : mNames)
-    //     {
-    //         auto const binding = n.second;
-    //         if (predicate(mBindings[binding]))
-    //         {
-    //             os << n.first << ": (";
-    //             dumpBindingDimensions(binding, context, os);
-    //             os << ")" << std::endl;
-
-    //             dumpBindingValues(context, binding, os);
-    //             os << std::endl;
-    //         }
-    //     }
-    // }
 
     std::unordered_map<std::string, int> getBindings(std::function<bool(Binding const&)> predicate) const
     {
@@ -881,26 +728,8 @@ private:
         getStream(s).wait(getEvent(e));
     }
 
-    // // cpuStart 和 gpuStart要分开（测量方式不同，其实是一个时间点）
-    // InferenceTrace getTrace(TimePoint const& cpuStart, TrtCudaEvent const& gpuStart, bool skipTransfers)
-    // {
-    //     float is
-    //         = skipTransfers ? getEvent(EventType::kCOMPUTE_S) - gpuStart : getEvent(EventType::kINPUT_S) - gpuStart;
-    //     float ie
-    //         = skipTransfers ? getEvent(EventType::kCOMPUTE_S) - gpuStart : getEvent(EventType::kINPUT_E) - gpuStart;
-    //     float os
-    //         = skipTransfers ? getEvent(EventType::kCOMPUTE_E) - gpuStart : getEvent(EventType::kOUTPUT_S) - gpuStart;
-    //     float oe
-    //         = skipTransfers ? getEvent(EventType::kCOMPUTE_E) - gpuStart : getEvent(EventType::kOUTPUT_E) - gpuStart;
-
-    //     return InferenceTrace(mStreamId,
-    //         std::chrono::duration<float, std::milli>(getEnqueueTime(true) - cpuStart).count(),
-    //         std::chrono::duration<float, std::milli>(getEnqueueTime(false) - cpuStart).count(), is, ie,
-    //         getEvent(EventType::kCOMPUTE_S) - gpuStart, getEvent(EventType::kCOMPUTE_E) - gpuStart, os, oe);
-    // }
 
     void createEnqueueFunction(
-        // InferenceOptions const& inference, nvinfer1::IExecutionContext& context, Bindings& bindings
         nvinfer1::IExecutionContext& context, Bindings& bindings, int batch, bool graph)
     {
         if (context.getEngine().hasImplicitBatchDimension())
@@ -1008,13 +837,6 @@ inline std::vector<int> getShape(nvinfer1::Dims dims) {
     return shape;
 }
 
-// bool processInput(const samplesCommon::BufferManager& buffers, const float* data, size)
-// {
-//     // Fill data buffer
-//     float* hostDataBuffer = static_cast<float*>(buffers.getHostBuffer(mParams.inputTensorNames[0]));
-//     std::memcpy(hostDataBuffer, data, mParams.batchSize * samplesCommon::volume(mInputDims) * sizeof(float));
-//     return true;
-// }
 
 struct TrtInference {
     TrtInference(
@@ -1028,7 +850,6 @@ struct TrtInference {
     ): mEnableGraph(enableGraph) {   
         mStreamNum = nStreams;
         gLogInfo << "--------------------\n";
-        // gLogInfo << "Using BERT inference C++\n";
         if (enableGraph)
         {
             gLogInfo << "CUDA Graph is enabled\n";
@@ -1042,27 +863,8 @@ struct TrtInference {
 
         initLibNvInferPlugins(&gLogger, "");
 
-        // gLogInfo << "Loading Inference Engine ... \n";
-        // mEngine = loadEngine(enginePath);
-
-        // if (mEngine == nullptr) {
-        //     gLogError << "Error loading engine\n";
-        //     exit(-1);
-        // }
-        // gLogInfo << "Done ... \n";
-
-        // // 创建context
-        // gLogInfo << "Creating Context ... \n";
-
-
-        // // 创建流
-        // gLogInfo << "Creating Stream ... \n";
-        // gpuErrChk(cudaStreamCreate(&mStream));
-
         setUp(enginePath, nStreams, batch, overloap, spin, enableGraph);
 
-        // gLogInfo << "Alloc Memory on Device & Host ... \n";
-        // allocateBindings(maxBatchSize);
     }
 
     TrtUniquePtr<ICudaEngine> loadEngine(const std::string& enginePath) {
@@ -1168,98 +970,6 @@ struct TrtInference {
     }
 
 
-
-    // 提前malloc 还是
-    // bool allocateBindings(const int maxBatchSize) {
-
-    //     assert(mEngine != nullptr);
-        
-    //     for (int32_t b = 0; b < mEngine->getNbBindings(); ++b) {
-
-    //         // auto dims = mContext->getBindingDimensions(b);
-    //         auto dims = mEngine->getBindingDimensions(b);
-    //         std::string name(mEngine->getBindingName(b));
-            
-    //         auto isInput = mEngine->bindingIsInput(b);
-    //         nvinfer1::DataType dataType = mEngine->getBindingDataType(b);
-    //         auto const *bindingInOutStr = isInput ? "input" : "output";
-            
-    //         auto size = volume(dims) * elementSize(dataType);
-    //         auto elemSize = elementSize(dataType);
-    //         void* devBuf = nullptr;
-    //         gpuErrChk(cudaMalloc(&devBuf, size));
-    //         gpuErrChk(cudaMemset(devBuf, 0, size));
-
-    //         mDevBufferMap[name] = devBuf;
-    //         mSizeMap[name] = size;
-    //         mShapeMap[name] = getShape(dims);
-    //         mDtypeMap[name] = getDtype(dataType);
-    //         // 警惕 double free
-    //         mBindings.emplace_back(devBuf);
-
-    //         if (isInput) {
-    //             mInputNames.emplace_back(name);
-    //             mInputDevBufferList.emplace_back(devBuf);
-    //             mInputSizeList.emplace_back(size);
-    //             mInputShapeList.emplace_back(getShape(dims));
-    //             mInputElemSizeList.emplace_back(elemSize);
-    //             mInputDataTypeList.emplace_back(dataType);
-
-    //         } else {
-    //             void* hostBuf = nullptr;
-    //             hostBuf = malloc(size);
-    //             memset(hostBuf, 0, size);
-    //             mHostBufferMap[name] = hostBuf;
-    //             mOutputNames.emplace_back(name);
-    //             mOutputDevBufferList.emplace_back(devBuf);
-    //             mOutputHostBufferList.emplace_back(hostBuf);
-    //             mOutputSizeList.emplace_back(size);
-    //             mOutputShapeList.emplace_back(getShape(dims));
-    //             mOutputElemSizeList.emplace_back(elemSize);
-    //             mOutputDataTypeList.emplace_back(dataType);
-    //         }
-    //     }
-    // }
-
-    // void prepare(int profIdx) {
-
-    //     if (!mContext->allInputDimensionsSpecified())
-    //     {
-    //         gLogError << "Not all input dimensions are specified for the exeuction context\n";
-    //         exit(-1);
-    //     }
-
-    //     if (mEnableGraph)
-    //     {
-    //         cudaGraph_t graph;
-    //         cudaGraphExec_t exec;
-    //         // warm up and let mContext do cublas initialization
-    //         bool status = mContext->enqueueV2(mBindings.data(), mStream, nullptr);
-    //         if (!status)
-    //         {
-    //             gLogError << "Enqueue failed\n";
-    //             exit(-1);
-    //         }
-    //         gLogVerbose << "Capturing graph\n";
-
-    //         gpuErrChk(cudaStreamBeginCapture(mStream, cudaStreamCaptureModeRelaxed));
-    //         status = mContext->enqueueV2(mBindings.data(), mStream, nullptr);
-    //         if (!status)
-    //         {
-    //             gLogError << "Enqueue failed\n";
-    //             exit(-1);
-    //         }
-
-    //         gpuErrChk(cudaStreamEndCapture(mStream, &graph));
-    //         gpuErrChk(cudaStreamSynchronize(mStream));
-
-    //         gpuErrChk(cudaGraphInstantiate(&exec, graph, NULL, NULL, 0));
-    //         mExecGraph = exec;
-    //     }
-    //     // mCuSeqlens.resize(batchSize + 1);
-    //     // std::generate(mCuSeqlens.begin(), mCuSeqlens.end(), [pos = -mSeqLength, this]() mutable{ pos += mSeqLength; return pos; });
-    // }
-
     bool setBufOneBinding(void* data, int streamId, int bindingIndex) {
         mBindings[streamId]->fill(bindingIndex, data);
         return true;
@@ -1276,7 +986,8 @@ struct TrtInference {
         }
 
         for (auto i=0; i<mStreamNum; i++) {
-            setBufOneBinding((uint8_t *)data + i * bindingSize, i, bindingIndex);
+            auto set_ptr = static_cast<char*>(data);
+            setBufOneBinding(static_cast<char*>(data) + i * bindingSize, i, bindingIndex);
         }
         return true;
     }
@@ -1294,7 +1005,7 @@ struct TrtInference {
         bool skipTransfers = false;
 
         // gLogInfo << "H2D ... split each input to streams\n";
-        std::cout << "H2D ... split each input to streams\n";
+        // std::cout << "H2D ... split each input to streams\n";
         const auto t0 = std::chrono::high_resolution_clock::now();
 
         if (mInputNames.size() != inputBufferList.size()) {
@@ -1303,7 +1014,6 @@ struct TrtInference {
         }
 
         for (auto i=0; i < inputBufferList.size(); i++) {
-            // setBuf(inputBufferList[i], i, mInputSizeList[i]);
             setBuf(inputBufferList[i], i, inputBufferSizeList[i]);
         }
 
@@ -1318,212 +1028,31 @@ struct TrtInference {
         
         for (auto& s : mStreams)
         {
-            s->sync(sync.cpuStart, sync.gpuStart, skipTransfers);
+            // s->sync(sync.cpuStart, sync.gpuStart, skipTransfers);
+            s->syncAll(sync.cpuStart, sync.gpuStart, skipTransfers);
         }   
     }
 
-
-    // void run2(std::vector<void*> inputBufferList) {   
-
-    //     gLogInfo << "H2D ... \n";
-    //     const auto t0 = std::chrono::high_resolution_clock::now();
-    //     // float dt_d2h_all = 0;
-
-    //     for (auto i = 0; i < mInputNames.size(); i++) {
-    //         gpuErrChk(
-    //             cudaMemcpyAsync(mInputDevBufferList[i], inputBufferList[i], mInputSizeList[i], cudaMemcpyHostToDevice, mStream));
-    //     }
-
-
-    //     // for (auto inName: mInputNames) {
-    //     //     const auto t00 = std::chrono::high_resolution_clock::now();
-    //     //     gpuErrChk(
-    //     //         cudaMemcpyAsync(mDevBufferMap[inName], inputBufferMap[inName], mSizeMap[inName], cudaMemcpyHostToDevice, mStream));
-    //     //     const auto t01 = std::chrono::high_resolution_clock::now();
-    //     //     const float dt_each_h2d = std::chrono::duration<float, std::milli>(t01 - t00).count();
-    //     //     // gLogInfo << "H2D: " <<  inName <<", dt ==>" << dt_each_h2d << "\n";
-    //     //     dt_d2h_all += dt_each_h2d;
-    //     // }
-    //     const auto t1 = std::chrono::high_resolution_clock::now();
-    //     const float dt_h2d = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    //     gLogInfo << "H2D End, dt ==>" << dt_h2d << "\n";
-
-    //     cudaEvent_t start, stop;
-    //     gpuErrChk(cudaEventCreate(&start));
-    //     gpuErrChk(cudaEventCreate(&stop));
-    //     gpuErrChk(cudaEventRecord(start, mStream));
-    //     gLogInfo << "Run ... \n";
-    //     if (mEnableGraph) {
-    //         // gLogInfo << "cudaGraphLaunch ... \n";
-    //         gpuErrChk(cudaGraphLaunch(mExecGraph, mStream));
-    //     } else {
-    //         // gLogInfo << "enqueueV2 ... \n";
-    //         bool status = mContext->enqueueV2(mBindings.data(), mStream, nullptr);
-    //         if (!status) {
-    //             gLogError << "Enqueue failed\n";
-    //             exit(-1);
-    //         }
-    //     }
-    //     gpuErrChk(cudaEventRecord(stop, mStream));
-    //     const auto t2 = std::chrono::high_resolution_clock::now();
-    //     const float dt_run = std::chrono::duration<float, std::milli>(t2 - t1).count();
-    //     gLogInfo << "RUN End, dt ==>" << dt_run << "\n";
-
-    //     // d2h
-    //     gLogInfo << "D2H ... \n";
-    //     // for (auto outName: mOutputNames) {
-    //     //     gpuErrChk(cudaMemcpyAsync(
-    //     //         mHostBufferMap[outName], mDevBufferMap[outName], mSizeMap[outName], cudaMemcpyDeviceToHost, mStream));
-    //     // }
-
-    //     for (auto i = 0; i < mOutputNames.size(); i++) {
-    //         gpuErrChk(
-    //             cudaMemcpyAsync(mOutputHostBufferList[i], mOutputDevBufferList[i], mOutputSizeList[i], cudaMemcpyDeviceToHost, mStream));
-    //     }
-
-
-    //     const auto t3 = std::chrono::high_resolution_clock::now();
-    //     const float dt_d2h = std::chrono::duration<float, std::milli>(t3 - t2).count();
-    //     gLogInfo << "D2H End, dt ==>" << dt_d2h << "\n";
-    //     // sync
-    //     // gLogInfo << "cudaStreamSynchronize ... \n";
-    //     gLogInfo << "Sync ... \n";
-    //     gpuErrChk(cudaStreamSynchronize(mStream));
-    //     const auto t4 = std::chrono::high_resolution_clock::now();
-    //     const float dt_sync = std::chrono::duration<float, std::milli>(t4 - t3).count();
-    //     gLogInfo << "Sync End, dt ==>" << dt_sync << "\n";
-
-    //     const float dt_infer = std::chrono::duration<float, std::milli>(t4 - t0).count();
-    //     gLogInfo << "Infer End, dt ==>" << dt_infer << "\n";
-
-    //     float dt_event;
-    //     gpuErrChk(cudaEventElapsedTime(&dt_event, start, stop));
-    //     gLogInfo << "Infer End, dt_event ==>" << dt_event << "\n";
-
-    // }
-
-
-    // void run(std::map<std::string, void*> inputBufferMap) {   
-
-    //     gLogInfo << "H2D ... \n";
-    //     const auto t0 = std::chrono::high_resolution_clock::now();
-    //     float dt_d2h_all = 0;
-    //     for (auto inName: mInputNames) {
-    //         const auto t00 = std::chrono::high_resolution_clock::now();
-    //         gpuErrChk(
-    //             cudaMemcpyAsync(mDevBufferMap[inName], inputBufferMap[inName], mSizeMap[inName], cudaMemcpyHostToDevice, mStream));
-    //         const auto t01 = std::chrono::high_resolution_clock::now();
-    //         const float dt_each_h2d = std::chrono::duration<float, std::milli>(t01 - t00).count();
-    //         // gLogInfo << "H2D: " <<  inName <<", dt ==>" << dt_each_h2d << "\n";
-    //         dt_d2h_all += dt_each_h2d;
-    //     }
-    //     const auto t1 = std::chrono::high_resolution_clock::now();
-    //     const float dt_h2d = std::chrono::duration<float, std::milli>(t1 - t0).count();
-    //     gLogInfo << "H2D End, dt ==>" << dt_h2d << "\n";
-    //     gLogInfo << "H2D End, dt self sum ==>" << dt_d2h_all << "\n";
-
-    //     cudaEvent_t start, stop;
-    //     gpuErrChk(cudaEventCreate(&start));
-    //     gpuErrChk(cudaEventCreate(&stop));
-    //     gpuErrChk(cudaEventRecord(start, mStream));
-    //     gLogInfo << "Run ... \n";
-    //     if (mEnableGraph) {
-    //         // gLogInfo << "cudaGraphLaunch ... \n";
-    //         gpuErrChk(cudaGraphLaunch(mExecGraph, mStream));
-    //     } else {
-    //         // gLogInfo << "enqueueV2 ... \n";
-    //         bool status = mContext->enqueueV2(mBindings.data(), mStream, nullptr);
-    //         if (!status) {
-    //             gLogError << "Enqueue failed\n";
-    //             exit(-1);
-    //         }
-    //     }
-    //     gpuErrChk(cudaEventRecord(stop, mStream));
-    //     const auto t2 = std::chrono::high_resolution_clock::now();
-    //     const float dt_run = std::chrono::duration<float, std::milli>(t2 - t1).count();
-    //     gLogInfo << "RUN End, dt ==>" << dt_run << "\n";
-
-    //     // d2h
-    //     gLogInfo << "D2H ... \n";
-    //     for (auto outName: mOutputNames) {
-    //         gpuErrChk(cudaMemcpyAsync(
-    //             mHostBufferMap[outName], mDevBufferMap[outName], mSizeMap[outName], cudaMemcpyDeviceToHost, mStream));
-    //     }
-    //     const auto t3 = std::chrono::high_resolution_clock::now();
-    //     const float dt_d2h = std::chrono::duration<float, std::milli>(t3 - t2).count();
-    //     gLogInfo << "D2H End, dt ==>" << dt_d2h << "\n";
-    //     // sync
-    //     // gLogInfo << "cudaStreamSynchronize ... \n";
-    //     gLogInfo << "Sync ... \n";
-    //     gpuErrChk(cudaStreamSynchronize(mStream));
-    //     const auto t4 = std::chrono::high_resolution_clock::now();
-    //     const float dt_sync = std::chrono::duration<float, std::milli>(t4 - t3).count();
-    //     gLogInfo << "Sync End, dt ==>" << dt_sync << "\n";
-
-    //     const float dt_infer = std::chrono::duration<float, std::milli>(t4 - t0).count();
-    //     gLogInfo << "Infer End, dt ==>" << dt_infer << "\n";
-
-    //     float dt_event;
-    //     gpuErrChk(cudaEventElapsedTime(&dt_event, start, stop));
-    //     gLogInfo << "Infer End, dt_event ==>" << dt_event << "\n";
-
-    // }
-
     ~TrtInference()
     {
-
-        // gpuErrChk(cudaStreamDestroy(mStream));
-
-        // for (auto iter = mDevBufferMap.begin(); iter != mDevBufferMap.end(); iter++) {
-        //     gpuErrChk(cudaFree(iter->second));
-        // }
-
-        // for (auto iter = mHostBufferMap.begin(); iter != mHostBufferMap.end(); iter++) {
-        //     free(iter->second);
-        // }
-
-        // if (mExecGraph) {
-        //     cudaGraphExecDestroy(mExecGraph);
-        // }
     }
 
     bool mEnableGraph{false};
-
     TrtUniquePtr<ICudaEngine> mEngine{nullptr};
     int mStreamNum{1};
     std::vector<std::unique_ptr<IExecutionContext>> mContexts; // N个context，用于管理上下文
     std::vector<std::unique_ptr<Bindings>> mBindings;
     std::vector<std::unique_ptr<Iteration<nvinfer1::IExecutionContext>>> mStreams; //N 个Iteration，用于执行推理
-
-    // cudaStream_t mStream{NULL};
     std::vector<std::string> mInputNames;
-    // std::vector<void*> mInputDevBufferList;
-    // std::vector<void*> mInputHostBufferList;
     std::vector<size_t> mInputSizeList;
     std::vector<size_t> mInputElemSizeList;
     std::vector<std::vector<int>>mInputShapeList;
     std::vector<DataType> mInputDataTypeList;
-
-
     std::vector<std::string> mOutputNames;
     std::vector<size_t> mOutputSizeList;
     std::vector<size_t> mOutputElemSizeList;
     std::vector<std::vector<int>>mOutputShapeList;
     std::vector<DataType> mOutputDataTypeList;
-    // std::vector<InferenceTrace> mLocalTrace;
-    // SyncStruct mSync;
-
-
-
-    // std::map<std::string, void*> mDevBufferMap;
-    // std::map<std::string, size_t> mSizeMap;
-    // std::map<std::string, DataType> mDataTypeMap;
-    // std::map<std::string, void*> mHostBufferMap;
-    // std::map<std::string, std::vector<int>> mShapeMap;
-    // std::map<std::string, std::string> mDtypeMap;
-    // std::map<std::string, std::string> mBindingTypeMap;
-    
-    // cudaGraphExec_t mExecGraph{};
 };
 
 #endif // INFER_C_TRT_INFER_H
